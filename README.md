@@ -2,7 +2,7 @@
 
 A minimal, browser-based bass arpeggiator that generates infinitely varied, human-feeling bass lines.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 
 ## What It Does
 
