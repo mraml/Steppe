@@ -61,7 +61,39 @@
             text-transform: uppercase;
             letter-spacing: 0.5em;
             color: #94a3b8;
+            margin-bottom: 1rem;
+        }
+        .slider-label {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.4em;
+            color: #64748b;
+            margin-top: 0.5rem;
             margin-bottom: 2rem;
+        }
+        .fx-toggle {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #94a3b8;
+            padding: 10px 16px;
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.3em;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .fx-toggle.active {
+            background: var(--accent-gradient);
+            color: #fff;
+            border-color: transparent;
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+        }
+        .fx-toggle:hover {
+            border-color: #6366f1;
         }
         input[type="range"] {
             -webkit-appearance: none;
@@ -157,13 +189,15 @@
     </div>
 
     <div class="main-ui" id="mainUi">
+        <button class="fx-toggle" id="fxToggle">Aurora</button>
+        
         <div class="bpm-value gradient-text" id="bpmText">85</div>
-        <div class="label">Tempo</div>
+        <div class="label">BPM</div>
 
         <div class="slider-group">
             <input type="range" id="bpmSlider" min="40" max="120" value="85">
-            <input type="range" id="densitySlider" min="1" max="100" value="40">
-            <div class="label" style="margin: 0">Density</div>
+            <input type="range" id="densitySlider" min="1" max="100" value="40" style="margin-top: 2rem">
+            <div class="slider-label">Density</div>
         </div>
 
         <div class="key-selectors">
@@ -185,6 +219,7 @@
 
     <script>
         let synth, subSynth, filter, distortion, comp, limiter, recorder, chunks = [];
+        let reverb, widener, fxActive = false;
         let isPlaying = false, isRecording = false;
         let tempo = 85, density = 40, pattern = [], voiceIdx = 0;
         let sequence;
@@ -336,6 +371,31 @@
                 oversample: "4x"
             });
             
+            // AURORA EFFECT: Reverb + Stereo Widening
+            reverb = new Tone.Reverb({
+                decay: 3.5,
+                preDelay: 0.01,
+                wet: 0
+            });
+            await reverb.generate();
+            
+            // Stereo widener using slight pitch shifting
+            const widenerL = new Tone.PitchShift({
+                pitch: -0.08,  // Subtle detune
+                windowSize: 0.05,
+                wet: 0
+            });
+            
+            const widenerR = new Tone.PitchShift({
+                pitch: 0.08,
+                windowSize: 0.05,
+                wet: 0
+            });
+            
+            const merger = new Tone.Merge();
+            
+            widener = { left: widenerL, right: widenerR, merger, wet: 0 };
+            
             // Master chain
             comp = new Tone.Compressor({
                 threshold: -18,
@@ -349,7 +409,20 @@
             
             // Route everything
             filter.connect(distortion);
-            distortion.connect(comp);
+            distortion.connect(reverb);
+            
+            // Split to stereo widener
+            reverb.connect(widenerL);
+            reverb.connect(widenerR);
+            widenerL.connect(merger, 0, 0);
+            widenerR.connect(merger, 0, 1);
+            
+            // Dry path (mono)
+            reverb.connect(comp);
+            
+            // Wet path (stereo)
+            merger.connect(comp);
+            
             subFilter.connect(comp);
             comp.connect(limiter);
             limiter.toDestination();
@@ -518,4 +591,167 @@
                         // Staccato notes
                         dur = "32n";
                     } else if (articulation > 0.9 && !isDownbeat) {
-                        // Very rare lo
+                        // Very rare long note on off-beat
+                        dur = "4n";
+                    }
+                    
+                    // Subtle timing humanization (stored for playback)
+                    const humanTiming = (Math.random() - 0.5) * 0.015; // ±15ms
+                    
+                    p[i] = { 
+                        octave, 
+                        vel, 
+                        dur, 
+                        humanTiming,
+                        isLong: dur === "4n" || dur === "8n"
+                    };
+                }
+            }
+            
+            pattern = p;
+        }
+
+        function startSequence() {
+            sequence = new Tone.Sequence((time, idx) => {
+                const barIdx = Math.floor(idx / 8);
+                const rootNote = document.getElementById(`key${barIdx}`).value;
+                const note = pattern[idx];
+                
+                if (note && Math.random() * 100 < density) {
+                    const freq = `${rootNote}${note.octave}`;
+                    const subFreq = `${rootNote}${note.octave - 1}`;
+                    
+                    // Apply human timing offset
+                    const timeOffset = note.humanTiming || 0;
+                    const actualTime = time + timeOffset;
+                    
+                    // Subtle velocity variation per-hit (human inconsistency)
+                    const velVariation = 0.95 + Math.random() * 0.1;
+                    const finalVel = Math.min(1, note.vel * velVariation);
+                    
+                    // Slight pitch drift per note (analog feel)
+                    const pitchDrift = (Math.random() - 0.5) * 0.3; // ±30 cents
+                    synth.detune.setValueAtTime(pitchDrift, actualTime);
+                    
+                    synth.triggerAttackRelease(freq, note.dur, actualTime, finalVel);
+                    synth.filterEnv.triggerAttackRelease(note.dur, actualTime, finalVel);
+                    subSynth.triggerAttackRelease(subFreq, note.dur, actualTime, finalVel * 0.8);
+                }
+            }, [...Array(32).keys()], "16n");
+            
+            sequence.start(0);
+            Tone.Transport.start();
+        }
+
+        function stopSequence() {
+            if (sequence) {
+                sequence.stop();
+                sequence.dispose();
+            }
+            Tone.Transport.stop();
+        }
+
+        async function startRecording() {
+            chunks = [];
+            
+            const dest = Tone.context.createMediaStreamDestination();
+            Tone.Destination.connect(dest);
+            
+            recorder = new MediaRecorder(dest.stream);
+            recorder.ondataavailable = e => chunks.push(e.data);
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: 'audio/wav' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                const name = prompt("Filename:", "steppe_loop");
+                if (name) {
+                    a.href = url;
+                    a.download = `${name}.wav`;
+                    a.click();
+                }
+                isRecording = false;
+                document.getElementById('exportBtn').innerHTML = "Export Loop (.wav)";
+                
+                Tone.Destination.disconnect(dest);
+            };
+            
+            recorder.start();
+            isRecording = true;
+            document.getElementById('exportBtn').innerHTML = '<span class="recording-dot"></span>Capturing Loop...';
+            
+            // Stop after one loop (8 bars = 32 sixteenth notes)
+            const loopDuration = Tone.Time("1m").toSeconds();
+            setTimeout(() => {
+                if (recorder && recorder.state !== "inactive") {
+                    recorder.stop();
+                }
+            }, loopDuration * 1000);
+        }
+
+        // Event Listeners
+        document.getElementById('bpmSlider').addEventListener('input', (e) => {
+            tempo = e.target.value;
+            document.getElementById('bpmText').innerText = tempo;
+            if (Tone.Transport) Tone.Transport.bpm.value = tempo;
+        });
+
+        document.getElementById('densitySlider').addEventListener('input', (e) => {
+            density = e.target.value;
+        });
+
+        document.getElementById('voiceBtn').addEventListener('click', () => {
+            voiceIdx = (voiceIdx + 1) % voices.length;
+            updateVoice();
+        });
+
+        document.getElementById('rerollBtn').addEventListener('click', () => {
+            generatePattern();
+            if (isPlaying) {
+                stopSequence();
+                startSequence();
+            }
+        });
+
+        document.getElementById('fxToggle').addEventListener('click', (e) => {
+            if (!reverb) return;
+            
+            fxActive = !fxActive;
+            
+            if (fxActive) {
+                // Fade in aurora effect
+                reverb.wet.rampTo(0.35, 0.3);
+                widener.left.wet.rampTo(0.4, 0.3);
+                widener.right.wet.rampTo(0.4, 0.3);
+                e.target.classList.add('active');
+            } else {
+                // Fade out
+                reverb.wet.rampTo(0, 0.3);
+                widener.left.wet.rampTo(0, 0.3);
+                widener.right.wet.rampTo(0, 0.3);
+                e.target.classList.remove('active');
+            }
+        });
+
+        document.getElementById('playBtn').addEventListener('click', async (e) => {
+            if (!synth) await initAudio();
+            
+            if (isPlaying) {
+                stopSequence();
+                e.target.innerText = "Play";
+                isPlaying = false;
+            } else {
+                startSequence();
+                e.target.innerText = "Stop";
+                isPlaying = true;
+            }
+        });
+
+        document.getElementById('exportBtn').addEventListener('click', async () => {
+            if (!isPlaying) {
+                await document.getElementById('playBtn').click();
+            }
+            startRecording();
+        });
+    </script>
+</body>
+</html>
