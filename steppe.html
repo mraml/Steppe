@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steppe</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg: #020617;
+            --ui-white: rgba(255, 255, 255, 0.95);
+            --accent-gradient: linear-gradient(135deg, #c084fc 0%, #6366f1 100%);
+        }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ui-white);
+            font-family: 'Inter', -apple-system, sans-serif;
+            height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            letter-spacing: 0.1em;
+        }
+        .splash-screen {
+            position: fixed;
+            inset: 0;
+            background: #020617;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: opacity 1s ease;
+        }
+        .main-ui {
+            opacity: 0;
+            transition: opacity 1.5s ease;
+            width: 100%;
+            max-width: 340px;
+            text-align: center;
+            display: none;
+        }
+        .gradient-text {
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 200;
+        }
+        .bpm-value {
+            font-size: 5.5rem;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+            font-variant-numeric: tabular-nums;
+        }
+        .label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5em;
+            color: #94a3b8;
+            margin-bottom: 2rem;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            height: 2px;
+            outline: none;
+            margin: 24px 0;
+            border-radius: 2px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #fff;
+            border: 2px solid #6366f1;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+        }
+        .key-selectors {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 2.5rem;
+        }
+        .key-select {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #c084fc;
+            font-size: 0.75rem;
+            padding: 12px 0;
+            outline: none;
+            text-align-last: center;
+            cursor: pointer;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .key-select:focus { border-color: #6366f1; }
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        .action-btn {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1.2rem;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.25em;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            color: var(--ui-white);
+            cursor: pointer;
+        }
+        .action-btn:hover { background: rgba(255, 255, 255, 0.05); }
+        .play-toggle {
+            width: 100%;
+            background: var(--accent-gradient);
+            color: #fff;
+            font-weight: 700;
+            border: none;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+        }
+        .export-btn {
+            margin-top: 2.5rem;
+            color: #6366f1;
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.3em;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .recording-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #f87171;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <div class="splash-screen" id="splash">
+        <h1 class="text-3xl gradient-text tracking-[1em] uppercase mb-4">Steppe</h1>
+        <p class="text-[0.6rem] text-slate-500 uppercase tracking-[0.4em]">Tap to initialize</p>
+    </div>
+
+    <div class="main-ui" id="mainUi">
+        <div class="bpm-value gradient-text" id="bpmText">85</div>
+        <div class="label">Tempo</div>
+
+        <div class="slider-group">
+            <input type="range" id="bpmSlider" min="40" max="120" value="85">
+            <input type="range" id="densitySlider" min="1" max="100" value="40">
+            <div class="label" style="margin: 0">Density</div>
+        </div>
+
+        <div class="key-selectors">
+            <select class="key-select" id="key0"></select>
+            <select class="key-select" id="key1"></select>
+            <select class="key-select" id="key2"></select>
+            <select class="key-select" id="key3"></select>
+        </div>
+
+        <div class="btn-grid">
+            <button class="action-btn" id="voiceBtn">Voice</button>
+            <button class="action-btn" id="rerollBtn">Pattern</button>
+        </div>
+        
+        <button class="action-btn play-toggle" id="playBtn">Play</button>
+
+        <div class="export-btn" id="exportBtn">Export Loop (.wav)</div>
+    </div>
+
+    <script>
+        let synth, subSynth, filter, distortion, comp, limiter, recorder, chunks = [];
+        let isPlaying = false, isRecording = false;
+        let tempo = 85, density = 40, pattern = [], voiceIdx = 0;
+        let sequence;
+        
+        const noteNames = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+        
+        const scales = {
+            minor: [0, 2, 3, 5, 7, 8, 10],
+            phrygian: [0, 1, 3, 5, 7, 8, 10],
+            dorian: [0, 2, 3, 5, 7, 9, 10],
+            minor_pent: [0, 3, 5, 7, 10]
+        };
+        
+        const voices = [
+            { 
+                name: "Pure", 
+                osc: "sine", 
+                filter: { freq: 800, q: 2, env: 1200 },
+                envelope: { attack: 0.005, decay: 0.15, sustain: 0.4, release: 0.1 },
+                distortion: 0,
+                volume: -8
+            },
+            { 
+                name: "Thick", 
+                osc: "sine", 
+                filter: { freq: 1000, q: 3, env: 1400 },
+                envelope: { attack: 0.008, decay: 0.18, sustain: 0.35, release: 0.12 },
+                distortion: 0.3,
+                volume: -10
+            },
+            { 
+                name: "Wooden", 
+                osc: "triangle", 
+                filter: { freq: 1200, q: 2.5, env: 1600 },
+                envelope: { attack: 0.003, decay: 0.2, sustain: 0.3, release: 0.15 },
+                distortion: 0.2,
+                volume: -9
+            },
+            { 
+                name: "Solid", 
+                osc: "triangle", 
+                filter: { freq: 1400, q: 3, env: 1800 },
+                envelope: { attack: 0.005, decay: 0.22, sustain: 0.25, release: 0.18 },
+                distortion: 0.4,
+                volume: -11
+            },
+            { 
+                name: "Tube", 
+                osc: "square", 
+                filter: { freq: 1600, q: 3.5, env: 2000 },
+                envelope: { attack: 0.002, decay: 0.25, sustain: 0.2, release: 0.2 },
+                distortion: 0.6,
+                volume: -12
+            },
+            { 
+                name: "Grime", 
+                osc: "square", 
+                filter: { freq: 1800, q: 4, env: 2200 },
+                envelope: { attack: 0.001, decay: 0.28, sustain: 0.18, release: 0.22 },
+                distortion: 0.8,
+                volume: -13
+            },
+            { 
+                name: "Fuzz", 
+                osc: "sawtooth", 
+                filter: { freq: 2000, q: 4, env: 2400 },
+                envelope: { attack: 0.001, decay: 0.3, sustain: 0.15, release: 0.25 },
+                distortion: 1.2,
+                volume: -14
+            },
+            { 
+                name: "Heavy", 
+                osc: "sawtooth", 
+                filter: { freq: 2200, q: 5, env: 2600 },
+                envelope: { attack: 0.001, decay: 0.32, sustain: 0.12, release: 0.28 },
+                distortion: 1.8,
+                volume: -15
+            }
+        ];
+
+        // Initialize key selectors
+        document.querySelectorAll('.key-select').forEach((sel, i) => {
+            noteNames.forEach(n => {
+                const opt = document.createElement('option');
+                opt.value = n;
+                opt.innerText = n;
+                sel.appendChild(opt);
+            });
+            sel.value = i === 0 ? "C" : (i === 2 ? "G" : "C");
+        });
+
+        document.getElementById('splash').addEventListener('click', async () => {
+            document.getElementById('splash').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('splash').style.display = 'none';
+                document.getElementById('mainUi').style.display = 'block';
+                setTimeout(() => document.getElementById('mainUi').style.opacity = '1', 50);
+            }, 1000);
+            await initAudio();
+        });
+
+        async function initAudio() {
+            await Tone.start();
+            Tone.Transport.bpm.value = tempo;
+            
+            // Sub oscillator (always sine, one octave down)
+            subSynth = new Tone.Synth({
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.005, decay: 0.15, sustain: 0.4, release: 0.1 }
+            });
+            
+            const subFilter = new Tone.Filter({
+                type: "lowpass",
+                frequency: 150,
+                Q: 0.7
+            });
+            
+            subSynth.connect(subFilter);
+            
+            // Main synth with voice configuration
+            synth = new Tone.MonoSynth({
+                oscillator: { type: voices[voiceIdx].osc },
+                envelope: voices[voiceIdx].envelope,
+                volume: voices[voiceIdx].volume
+            });
+            
+            // Filter with envelope follower
+            filter = new Tone.Filter({
+                type: "lowpass",
+                frequency: voices[voiceIdx].filter.freq,
+                Q: voices[voiceIdx].filter.q
+            });
+            
+            const filterEnv = new Tone.FrequencyEnvelope({
+                attack: voices[voiceIdx].envelope.attack,
+                decay: voices[voiceIdx].envelope.decay,
+                sustain: 0.5,
+                release: voices[voiceIdx].envelope.release,
+                baseFrequency: voices[voiceIdx].filter.freq,
+                octaves: 2.5
+            });
+            
+            synth.connect(filter);
+            filterEnv.connect(filter.frequency);
+            
+            // Distortion
+            distortion = new Tone.Distortion({
+                distortion: voices[voiceIdx].distortion,
+                oversample: "4x"
+            });
+            
+            // Master chain
+            comp = new Tone.Compressor({
+                threshold: -18,
+                ratio: 4,
+                attack: 0.003,
+                release: 0.15,
+                knee: 6
+            });
+            
+            limiter = new Tone.Limiter(-1);
+            
+            // Route everything
+            filter.connect(distortion);
+            distortion.connect(comp);
+            subFilter.connect(comp);
+            comp.connect(limiter);
+            limiter.toDestination();
+            
+            // Store filterEnv for triggering
+            synth.filterEnv = filterEnv;
+            
+            generatePattern();
+        }
+
+        function updateVoice() {
+            if (!synth) return;
+            
+            const v = voices[voiceIdx];
+            
+            synth.oscillator.type = v.osc;
+            synth.envelope.attack = v.envelope.attack;
+            synth.envelope.decay = v.envelope.decay;
+            synth.envelope.sustain = v.envelope.sustain;
+            synth.envelope.release = v.envelope.release;
+            synth.volume.value = v.volume;
+            
+            filter.frequency.value = v.filter.freq;
+            filter.Q.value = v.filter.q;
+            
+            synth.filterEnv.attack = v.envelope.attack;
+            synth.filterEnv.decay = v.envelope.decay;
+            synth.filterEnv.release = v.envelope.release;
+            synth.filterEnv.baseFrequency = v.filter.freq;
+            
+            distortion.distortion = v.distortion;
+        }
+
+        function generatePattern() {
+            const steps = 32;
+            const p = new Array(steps).fill(null);
+            
+            // Choose root and scale
+            const rootNote = noteNames[Math.floor(Math.random() * 12)];
+            const scaleType = Object.keys(scales)[Math.floor(Math.random() * 4)];
+            const scale = scales[scaleType];
+            
+            const rootIdx = noteNames.indexOf(rootNote);
+            const scaleNotes = scale.map(interval => noteNames[(rootIdx + interval) % 12]);
+            
+            // Create chord progression (4 bars)
+            // Weight toward common progressions: i-VI-III-VII, i-iv-v, i-VII-VI-VII
+            const progressions = [
+                [0, 5, 2, 6],  // i-VI-III-VII (dark)
+                [0, 3, 4, 0],  // i-iv-v-i (classic)
+                [0, 6, 5, 6],  // i-VII-VI-VII (moody)
+                [0, 2, 6, 5],  // i-III-VII-VI (descending)
+                [0, 3, 6, 4],  // i-iv-VII-v (tension)
+            ];
+            
+            const progression = progressions[Math.floor(Math.random() * progressions.length)];
+            progression.forEach((degree, bar) => {
+                const note = scaleNotes[degree % scaleNotes.length];
+                document.getElementById(`key${bar}`).value = note;
+            });
+            
+            // Rhythmic character selection
+            const grooves = {
+                driving: { downbeat: 0.98, upbeat: 0.85, syncopation: 0.3, sparsity: 0.15 },
+                bouncy: { downbeat: 0.95, upbeat: 0.7, syncopation: 0.65, sparsity: 0.25 },
+                hypnotic: { downbeat: 0.99, upbeat: 0.4, syncopation: 0.85, sparsity: 0.2 },
+                broken: { downbeat: 0.9, upbeat: 0.5, syncopation: 0.75, sparsity: 0.4 },
+                minimal: { downbeat: 0.98, upbeat: 0.3, syncopation: 0.4, sparsity: 0.5 }
+            };
+            
+            const grooveKeys = Object.keys(grooves);
+            const groove = grooves[grooveKeys[Math.floor(Math.random() * grooveKeys.length)]];
+            
+            let lastOctave = 2;
+            let melodicDirection = 0; // -1 descending, 0 static, 1 ascending
+            let phraseBoundary = 0;
+            
+            for (let i = 0; i < steps; i++) {
+                const position = i % 8;
+                const barNum = Math.floor(i / 8);
+                const isDownbeat = position === 0;
+                const isUpbeat = position === 4;
+                const isSyncopated = position === 3 || position === 6;
+                const isPickup = position === 7;
+                
+                // Phrase awareness (every 8 steps)
+                if (position === 0) {
+                    phraseBoundary++;
+                    // Change melodic direction occasionally
+                    if (Math.random() > 0.6) {
+                        melodicDirection = Math.random() > 0.5 ? 1 : -1;
+                    }
+                }
+                
+                // Probability based on groove + position
+                let prob = groove.sparsity;
+                if (isDownbeat) prob = groove.downbeat;
+                else if (isUpbeat) prob = groove.upbeat;
+                else if (isSyncopated) prob = groove.syncopation;
+                else if (isPickup) prob = 0.6; // Often lead into next bar
+                else if (position === 2) prob = groove.sparsity + 0.15;
+                
+                // Add phrase-end fills (bar 2 & 4 get busier)
+                if (barNum === 1 || barNum === 3) prob *= 1.15;
+                
+                if (Math.random() < prob) {
+                    let octave = lastOctave;
+                    
+                    // Melodic contour logic
+                    if (isDownbeat) {
+                        // Downbeats anchor the phrase
+                        if (phraseBoundary % 2 === 0) {
+                            octave = 2; // Even bars stay grounded
+                        } else {
+                            octave = Math.random() > 0.6 ? 2 : 3; // Odd bars can rise
+                        }
+                    } else {
+                        // Follow melodic direction with some randomness
+                        const follow = Math.random();
+                        if (follow < 0.6) {
+                            // Follow direction
+                            if (melodicDirection > 0 && lastOctave < 3) octave = lastOctave + (Math.random() > 0.7 ? 1 : 0);
+                            else if (melodicDirection < 0 && lastOctave > 1) octave = lastOctave - (Math.random() > 0.7 ? 1 : 0);
+                            else octave = lastOctave;
+                        } else if (follow < 0.85) {
+                            // Stay same
+                            octave = lastOctave;
+                        } else {
+                            // Surprise jump
+                            octave = [1, 2, 3][Math.floor(Math.random() * 3)];
+                        }
+                    }
+                    
+                    // Constrain octave range
+                    octave = Math.max(1, Math.min(3, octave));
+                    lastOctave = octave;
+                    
+                    // Velocity with micro-variations (human imperfection)
+                    let vel = 0.55 + Math.random() * 0.25;
+                    if (isDownbeat) {
+                        vel = 0.75 + Math.random() * 0.15;
+                        // First beat of phrase slightly accented
+                        if (position === 0 && i % 16 === 0) vel += 0.1;
+                    } else if (isUpbeat) {
+                        vel = 0.65 + Math.random() * 0.2;
+                    } else if (isPickup) {
+                        vel *= 0.75; // Pickup notes softer
+                    } else if (isSyncopated) {
+                        vel *= 0.85; // Syncopation slightly ghosted
+                    }
+                    
+                    // Clamp velocity
+                    vel = Math.min(1, vel);
+                    
+                    // Duration variation (articulation)
+                    let dur = "16n";
+                    const articulation = Math.random();
+                    
+                    if (isDownbeat && articulation > 0.7) {
+                        // Occasional sustained root notes
+                        dur = Math.random() > 0.5 ? "4n" : "8n";
+                    } else if (isUpbeat && articulation > 0.8) {
+                        // Rare upbeat sustains
+                        dur = "8n";
+                    } else if (articulation < 0.15) {
+                        // Staccato notes
+                        dur = "32n";
+                    } else if (articulation > 0.9 && !isDownbeat) {
+                        // Very rare lo
